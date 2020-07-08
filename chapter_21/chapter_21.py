@@ -1,3 +1,4 @@
+
 import datetime
 import boto3
 from botocore.exceptions import ClientError
@@ -185,9 +186,7 @@ def put_pull_request(customer_id, repo_name, pull_request_number):
 '''now lets add a pull request for that repo
 "ID is shared across Issues and Pull Requests in a Repo. You won’t
 have an Issue and a Pull Request with the same ID in a Repo."
-
 For a real life example try not to give your pull request the same ID as an issue
-
 '''
 
 # put_pull_request('jonathanbradbury', 'example_repo', 5)
@@ -548,3 +547,187 @@ def add_stars_to_repo_with_increment(repo_owner, repo_name, starring_user):
 '''and our queries still work no issues'''
 # query_stars_no_issues('jonathanbradbury', 'another_example')
 # query_issues_no_stars('jonathanbradbury', 'another_example')
+
+
+''' time to update the forks API to update the forks number '''
+
+
+def add_forks_to_repo_with_increment(repo_owner, repo_name, forking_user):
+    try:
+        created_at = datetime.datetime.now()
+        result = dynamodb.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "Item": {
+                            'PK': {'S': 'REPO#{}#{}'.format(forking_user, repo_name)},
+                            'SK': {'S': 'REPO#{}#{}'.format(forking_user, repo_name)},
+                            "RepoName": {"S": repo_name},
+                            "RepoOwner": {"S": forking_user},
+                            "Created_At": {"S": created_at.isoformat()},
+                            "GSI1PK": {"S": 'REPO#{}#{}'.format(forking_user, repo_name)},
+                            "GSI1SK": {"S": 'REPO#{}#{}'.format(forking_user, repo_name)},
+                            "GSI2PK": {"S": 'REPO#{}#{}'.format(repo_owner, repo_name)},
+                            "GSI2SK": {"S": 'FORK#{}'.format(forking_user)},
+                            "IssuesAndPullRequestCount": {"N": '0'},
+                            "StarCount": {"N": '0'},
+                            "ForkCount": {"N": '0'}
+                        },
+                        "TableName": TABLE_NAME,
+                        "ConditionExpression": "attribute_not_exists(PK)"
+                    }
+                },
+                {
+                    "Update": {
+                        "Key": {
+                            'PK': {'S': 'REPO#{}#{}'.format(repo_owner, repo_name)},
+                            'SK': {'S': 'REPO#{}#{}'.format(repo_owner, repo_name)}
+                        },
+                        "TableName": TABLE_NAME,
+                        "ConditionExpression": "attribute_exists(PK)",
+                        "UpdateExpression": "SET #count = #count + :incr",
+                        "ExpressionAttributeNames": {
+                            "#count": "ForkCount"
+                        },
+                        "ExpressionAttributeValues": {
+                            ":incr": {"N": "1"}
+                        }
+                    }
+                }
+            ]
+        )
+        print(result)
+    except ClientError as e:
+        print(e)
+
+
+''' if someone were to star our forked repo, they can just use the star function we already have, since we set up forks to be just like normal repos'''
+# add_forks_to_repo_with_increment(
+#     'jonathanbradbury', 'another_example', 'RobbieKohler')
+
+
+''' i'm leaving out messages and reactions (for now ) since they're not tied to any data, you just query them out, thats a simple mode we have seen a dozen times already'''
+
+
+def put_user_with_org(user, org, payment_plan):
+    try:
+        created_at = datetime.datetime.now()
+        result = dynamodb.put_item(
+            TableName=TABLE_NAME,
+            Item={
+                'PK': {'S': 'ACCOUNT#{}'.format(user)},
+                'SK': {'S': 'ACCOUNT#{}'.format(user)},
+                "Type": {"S": 'User'},
+                "UserName": {"S": user},
+                "CreatedAt": {"S": created_at.isoformat()},
+                "Organizations": {"M": org},
+                "PaymentPlan": {"M": payment_plan},
+                "GSI3PK": {'S': 'ACCOUNT#{}'.format(user)},
+                "GSI3SK": {'S': 'ACCOUNT#{}'.format(user)}
+            }
+        )
+        # prints results from a succesful add
+        print(result)
+    except ClientError as e:
+        print(e)
+
+
+def put_org(org, payment_plan):
+    try:
+        created_at = datetime.datetime.now()
+        result = dynamodb.put_item(
+            TableName=TABLE_NAME,
+            Item={
+                'PK': {'S': 'ACCOUNT#{}'.format(org)},
+                'SK': {'S': 'ACCOUNT#{}'.format(org)},
+                "Type": {"S": 'Organization'},
+                "OrganizationName": {"S": org},
+                "CreatedAt": {"S": created_at.isoformat()},
+                "PaymentPlan": {"M": payment_plan},
+                "GSI3PK": {'S': 'ACCOUNT#{}'.format(org)},
+                "GSI3SK": {'S': 'ACCOUNT#{}'.format(org)}
+            }
+        )
+        # prints results from a succesful add
+        print(result)
+    except ClientError as e:
+        print(e)
+
+
+def put_membership(org, member):
+    created_at = datetime.datetime.now()
+    try:
+        result = dynamodb.put_item(
+            TableName=TABLE_NAME,
+            Item={
+                'PK': {'S': 'ACCOUNT#{}'.format(org)},
+                'SK': {'S': 'MEMBERSHIP#{}'.format(member)},
+                "Role": {"S": 'Member'},
+                "UserName": {"S": member},
+                "CreatedAt": {"S": created_at.isoformat()},
+            }
+        )
+        print(result)
+    except ClientError as e:
+        print(e)
+
+
+def put_repo_with_GSI_GSI2_GSI3_increment(account_id, repo_name):
+    created_at = datetime.datetime.now()
+    try:
+        result = dynamodb.put_item(
+            TableName=TABLE_NAME,
+            Item={
+                'PK': {'S': 'REPO#{}#{}'.format(account_id, repo_name)},
+                'SK': {'S': 'REPO#{}#{}'.format(account_id, repo_name)},
+                "RepoName": {"S": repo_name},
+                "RepoOwner": {"S": account_id},
+                "Created_At": {"S": created_at.isoformat()},
+                "GSI1PK": {"S": 'REPO#{}#{}'.format(account_id, repo_name)},
+                "GSI1SK": {"S": 'REPO#{}#{}'.format(account_id, repo_name)},
+                "GSI2PK": {"S": 'REPO#{}#{}'.format(account_id, repo_name)},
+                "GSI2SK": {"S": 'REPO#{}'.format(repo_name)},
+                "GSI3PK": {"S": 'ACCOUNT#{}'.format(account_id)},
+                "GSI3SK": {"S": '#{}'.format(created_at.isoformat())},
+                "IssuesAndPullRequestCount": {"N": '0'},
+                "StarCount": {"N": '0'},
+                "ForkCount": {"N": '0'}
+            }
+        )
+        # prints results from a succesful add
+        print(result)
+    except ClientError as e:
+        print(e)
+
+
+''' okay now lets create a new repo that includes GSI3, then we will add accounts for the user of this repo,
+we will add an org and make this user a member of that org'''
+
+# put_repo_with_GSI_GSI2_GSI3_increment('Flexo', 'how_to_bend')
+
+# put_user_with_org('Flexo', {'Bending_Inc': {'S': 'Member'}}, {'planType': {
+#                   'S': 'PRO'}, 'planStartDate': {'S': '2020-07-08 09:00:00'}})
+
+# put_org('Bending_inc', {'planType': {
+#     'S': 'PRO'}, 'planStartDate': {'S': '2020-07-08 09:00:00'}})
+
+# put_membership('Bending_inc', 'Flexo')
+
+''' Now that our repos and our users share a GSI3, we can query on GSI3 to get user info, and what repos they have.'''
+
+
+def query_user_info(account_name):
+    results = dynamodb.query(
+        TableName=TABLE_NAME,
+        IndexName='GSI3-index',
+        ExpressionAttributeValues={
+            ':GSI3PK': {
+                'S': 'ACCOUNT#{}'.format(account_name),
+            },
+        }, KeyConditionExpression='GSI3PK = :GSI3PK'
+    )
+
+    print(results)
+
+
+query_user_info('Flexo')
